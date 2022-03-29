@@ -6,7 +6,6 @@
 #define reset_color() printf("\033[0m")
 #define EXIT_OK 1
 
-
 void vosh_loop(void);
 char *read_cmd(void);
 char **parse_cmd(void);
@@ -15,29 +14,11 @@ void start_shell(void);
 void print_wd(void);
 
 int main(int argc, char **argv) {
-    // kanske man kan ta in grejer för att göra nåt kul?
-
     start_shell();
-    // Load config, if any 
-    /*
-    In this step, a typical shell would read and execute its
-    configuration files. These change aspects of the shell’s
-    behavior.
-    */
-
-    // Command loop
+    
     vosh_loop();
 
-    /*
-    Next, the shell reads commands from stdin (which could be 
-    interactive, or a file) and executes them.
-    */
-
-    // Cleanup
-    /*
-    After its commands are executed, the shell executes any 
-    shutdown commands, frees up any memory, and terminates.
-    */
+    // gör cleanup
 
     return EXIT_OK;
 }
@@ -51,10 +32,12 @@ void start_shell(void) {
 }
 
 void vosh_loop(void) {
-    while(1) {
+    // Get the inputted command and store it in the buffer
+    char buf[512];
+    fgets(buf, 512, stdin);
+    fprintf(stdout, "buffer: %s\n", buf);
 
-    }
-    // read one line from stdin
+    
     // parse - seperate command string into a program and arguments
     // Execute - run the  command
 
@@ -65,14 +48,24 @@ char *read_cmd(void) {
 }
 
 char **parse_cmd(void) {
-
+ /*
+    Parsing can be done by using strsep(“”). It will separate words based on spaces. Always 
+    skip words with zero length to avoid storing of extra spaces.
+ */
 }
 
 int execute_cmd(char** cmd) {
+/*
+    After parsing, check the list of built-in commands, and if present, execute it. If not, 
+    execute it as a system command. To check for built-in commands, store the commands in 
+    an array of character pointers, and compare all with strcmp().
 
+    “cd” does not work natively using execvp, so it is a built-in command, executed with 
+    chdir().
+*/
 }
 
-// Prints working directory and 
+// Prints working directory
 void print_wd(void) {
     char current_directory[512];
     getcwd(current_directory, 512 * sizeof(char));
@@ -89,7 +82,7 @@ void print_hack_cmds(char *arg) {
 
 /*  Pseudo code  */
 /*
-Command is entered and if length is non-null, keep it in history.
+Command is entered and if length is non-null, keep it in history, else break and call init_shell().
 
 Parsing, break up commands and arguments into individual words and strings
 
@@ -104,5 +97,11 @@ If pipes are present, handling pipes.
 Executing system commands and libraries by forking a child and calling execvp.
 
 Printing current directory name and asking for next input
-    - Printing the directory can be done using getcwd.
+*/
+
+// DEPENDENCIES
+/*
+sudo apt-get install libreadline-dev
+
+
 */

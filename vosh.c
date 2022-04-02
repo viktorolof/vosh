@@ -8,7 +8,7 @@
 #define clear_terminal() printf("\033[H\033[J")
 #define purple() printf("\033[1;35m")
 #define reset_color() printf("\033[0m")
-#define EXIT_OK 1
+#define EXIT_OK 0
 #define MAX_CMD_LEN 512
 
 void vosh_loop(void);
@@ -17,8 +17,10 @@ int parse_cmd(char *cmd, char **formatted_cmd);
 int execute_cmd(int size, int pipes,  char **cmd);
 void print_shell(void);
 void print_wd(void);
-int parent_wait(int lines);
-int check_pipes(int size, char **formatted_cmd);
+int parent_wait(int children);
+void exec_no_pipes(char **cmd);
+int count_pipes(int size, int positions[], char **formatted_cmd);
+void prepare_cmds(int pipes, int positions[], int cmd_amount, char **formatted_cmd, char ***seperated_cmd);
 void save_to_history(void);
 void *safe_alloc(int size_of_mem);
 
@@ -51,18 +53,36 @@ void vosh_loop(void) {
 
         // Parse input
         int amount_of_cmds = parse_cmd(cmd_buffer, formatted_cmd);
-        int x = check_pipes(amount_of_cmds, formatted_cmd);
-
-        // sätt sista grejen till null
-        formatted_cmd[amount_of_cmds] = (char *)safe_alloc(sizeof(char));
-        formatted_cmd[amount_of_cmds] = (char *)NULL;
+        int positions_of_pipes[(int) ((amount_of_cmds * 0.5) +1)]; // The max amount of well-formed pipes is amount-of_cmds/2
+        int pipe_amount = count_pipes(amount_of_cmds, positions_of_pipes, formatted_cmd);
 
         // Execute
-        status = execute_cmd(amount_of_cmds, x,  formatted_cmd);
-        status = parent_wait(x);
-    }
+        if(pipe_amount == 0) {
+            exec_no_pipes(formatted_cmd);
+            status = parent_wait(1);
+        } else {
+            char ***seperated_cmds = (char ***)safe_alloc(pipe_amount * sizeof(char **));
+            prepare_cmds(pipe_amount, positions_of_pipes, amount_of_cmds, formatted_cmd, seperated_cmds);
+            /* sätt sista grejen till null (detta ska hända i count_pipes)
+            formatted_cmd[amount_of_cmds] = (char *)safe_alloc(sizeof(char));
+            formatted_cmd[amount_of_cmds] = (char *)NULL;
+            */
+            
+        }    
 
-    // fria
+        /*
+        for(int i = 0 ; i < 3 ; i++) {
+            printf("position %d = %d\n", i, positions_of_pipes[i]);
+        }
+        */
+
+    
+
+        
+        
+
+        // fria
+    }
 }
 
 void read_cmd(char *buf){
@@ -101,6 +121,22 @@ int parse_cmd(char *cmd, char **formatted_cmd) {
     return amount_of_cmds;
 }
 
+
+// TODO Gör ett generellt fall på liknande sätt som i mexec? 
+// Alternativt tänk bara ut hur man gör det här
+void prepare_cmds(int pipes, int positions[], int cmd_amount, char **formatted_cmd, char ***seperated_cmd) {
+    for(int i = 0 ; i <= pipes ; i++) {
+        seperated_cmd[i] = (char **) safe_alloc(cmd_amount * sizeof(char *));
+        int k = 0; 
+        for(int j = i ; j < positions[i] ; j++) {
+            seperated_cmd[i][k] = (char *) safe_alloc(MAX_CMD_LEN * sizeof(char));
+            strcpy(seperated_cmd[i][k], formatted_cmd[j]);
+            printf("copying %s into position %d %d, copied string is %s\n", formatted_cmd[j], i, k, seperated_cmd[i][k]);
+            k++;
+        }
+    }
+}
+
 // size bör vara en array, pipes är storleken, vi behöver också faktiska pipes
 int execute_cmd(int size, int pipes, char **cmd) {
     /*
@@ -117,22 +153,12 @@ int execute_cmd(int size, int pipes, char **cmd) {
         “cd” does not work natively using execvp, so it is a built-in command, executed with
         chdir().
     */
+
+
+    // det här kan vi ha som special case i en egen funk
     int status = 1;
     for (int i = 0; i < pipes; i++) {
-        pid_t pid;
-        if ((pid = fork()) < 0) {
-            perror("fork failed");
-            exit(1);
-        }
-
-        if(pid == 0) {
-            if (execvp(cmd[0], cmd) < 0)
-            {
-                perror(cmd[0]);
-                exit(1);
-            }
-
-        }
+       
     }
 
     return status;
@@ -158,14 +184,37 @@ void *safe_alloc(int size_of_mem) {
     return v;
 }
 
-int check_pipes(int size, char **formatted_cmd) {
-    // kolla efter pipetecken
-    return 1;
+int count_pipes(int size, int positions[], char **formatted_cmd) {
+    int pos = 0;
+    int amount = 0;
+    for(int i = 0 ; i < size ; i++) {
+        if(strcmp(formatted_cmd[i], "|") == 0) {
+            amount++;
+            positions[pos++] = i;
+        }
+    }
+
+    return amount;
 }
 
-int parent_wait(int lines) {
+void exec_no_pipes(char **cmd) {
+    pid_t pid;
+    if ((pid = fork()) < 0) {
+        perror("fork failed");
+        exit(1);
+    }
+
+    if(pid == 0) {
+        if (execvp(cmd[0], cmd) < 0) {
+            perror(cmd[0]);
+            exit(1);
+        }
+    }
+}
+
+int parent_wait(int children) {
     int status;
-    for (int i = 0; i < lines; i++) {
+    for (int i = 0; i < children; i++) {
         if ((wait(&status)) < 0) {
             perror("wait error");
             exit(1);

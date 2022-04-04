@@ -4,9 +4,11 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <stdbool.h>
 
 #define clear_terminal() printf("\033[H\033[J")
 #define purple() printf("\033[1;35m")
+#define blue() printf("\033[1;34m")
 #define reset_color() printf("\033[0m")
 #define EXIT_FAIL 1
 #define MAX_CMD_LEN 512
@@ -32,6 +34,8 @@ void close_pipes_first_child(int arr[][2], int pipe_amount);
 void close_pipes_last_child(int arr[][2], int pipe_amount, int index);
 void close_pipes_middle_child(int arr[][2], int pipe_amount, int index);
 void close_pipes(int arr[][2], int upper_limit);
+bool is_built_in_cmd(char *cmd);
+void exec_built_in_cmd(char **cmd);
 
 int main(int argc, char **argv) {
     clear_terminal();
@@ -46,8 +50,9 @@ int main(int argc, char **argv) {
 void print_shell(void) {
     purple();
     printf("#vosh ");
-    reset_color();
+    blue();
     print_wd();
+    reset_color();
 }
 
 void vosh_loop(void) {
@@ -242,13 +247,17 @@ void exec_w_pipes(char ***cmds, int pipes[][2], int pipe_amount) {
             } else {
                 close_pipes_middle_child(pipes, pipe_amount, i);
             }
-            if(execvp(cmds[i][0], cmds[i]) < 0) {
-                perror(cmds[i][0]);
-                //fria
-                exit(EXIT_FAILURE);
+
+            if(is_built_in_cmd(cmds[i][0])) {
+                exec_built_in_cmd(cmds[i]);
+            } else {
+                if(execvp(cmds[i][0], cmds[i]) < 0) {
+                    perror(cmds[i][0]);
+                    //fria
+                    exit(EXIT_FAILURE);
+                }
             }
         }
-
     }
 }
 
@@ -321,4 +330,13 @@ void close_pipes(int arr[][2], int upper_limit) {
             close(arr[i][WRITE_END]);
         }
     }
+}
+
+
+bool is_built_in_cmd(char *cmd) {
+    return false;
+}
+
+void exec_built_in_cmd(char **cmd) {
+
 }

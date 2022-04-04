@@ -8,8 +8,10 @@
 #define clear_terminal() printf("\033[H\033[J")
 #define purple() printf("\033[1;35m")
 #define reset_color() printf("\033[0m")
-#define EXIT_OK 0
+#define EXIT_FAIL 1
 #define MAX_CMD_LEN 512
+#define READ_END 0
+#define WRITE_END 1
 
 void vosh_loop(void);
 void read_cmd(char *buf);
@@ -19,10 +21,17 @@ void print_shell(void);
 void print_wd(void);
 int parent_wait(int children);
 void exec_no_pipes(char **cmd);
+void exec_w_pipes(char ***cmds, int pipes[][2], int pipe_amount);
 int count_pipes(int size, int positions[], char **formatted_cmd);
 void prepare_cmds(int pipes, int positions[], int cmd_amount, char **formatted_cmd, char ***seperated_cmd);
 void save_to_history(void);
 void *safe_alloc(int size_of_mem);
+void open_pipes(int pipes[][2], int pipe_amount);
+void close_child_pipes(int pipes[][2], int pipe_amount);
+void close_pipes_first_child(int arr[][2], int pipe_amount);
+void close_pipes_last_child(int arr[][2], int pipe_amount, int index);
+void close_pipes_middle_child(int arr[][2], int pipe_amount, int index);
+void close_pipes(int arr[][2], int upper_limit);
 
 int main(int argc, char **argv) {
     clear_terminal();
@@ -31,7 +40,7 @@ int main(int argc, char **argv) {
 
     // gör cleanup
 
-    return EXIT_OK;
+    return EXIT_SUCCESS;
 }
 
 void print_shell(void) {
@@ -63,23 +72,16 @@ void vosh_loop(void) {
         } else {
             char ***seperated_cmds = (char ***)safe_alloc(pipe_amount * sizeof(char **));
             prepare_cmds(pipe_amount, positions_of_pipes, amount_of_cmds, formatted_cmd, seperated_cmds);
-            /* sätt sista grejen till null (detta ska hända i count_pipes)
-            formatted_cmd[amount_of_cmds] = (char *)safe_alloc(sizeof(char));
-            formatted_cmd[amount_of_cmds] = (char *)NULL;
-            */
+
+            int pipes[pipe_amount][2];
+            open_pipes(pipes, pipe_amount);
             
+            exec_w_pipes(seperated_cmds, pipes, pipe_amount);
+
+            close_pipes(pipes, pipe_amount);
+            
+            status = parent_wait(pipe_amount + 1);
         }    
-
-        /*
-        for(int i = 0 ; i < 3 ; i++) {
-            printf("position %d = %d\n", i, positions_of_pipes[i]);
-        }
-        */
-
-    
-
-        
-        
 
         // fria
     }
@@ -122,19 +124,30 @@ int parse_cmd(char *cmd, char **formatted_cmd) {
 }
 
 
-// TODO Gör ett generellt fall på liknande sätt som i mexec? 
-// Alternativt tänk bara ut hur man gör det här
-void prepare_cmds(int pipes, int positions[], int cmd_amount, char **formatted_cmd, char ***seperated_cmd) {
+void prepare_cmds(int pipes, int positions[], int cmd_amount, 
+                    char **formatted_cmd, char ***seperated_cmd) {
+    int x = 0; // counter for formatted_cmd
+    positions[pipes] = -1; // define last position in array to avoid undefined behaviour
+
+    // Loop for breaking up formatted_cmd into seperated, executable commands
     for(int i = 0 ; i <= pipes ; i++) {
         seperated_cmd[i] = (char **) safe_alloc(cmd_amount * sizeof(char *));
-        int k = 0; 
-        for(int j = i ; j < positions[i] ; j++) {
-            seperated_cmd[i][k] = (char *) safe_alloc(MAX_CMD_LEN * sizeof(char));
-            strcpy(seperated_cmd[i][k], formatted_cmd[j]);
-            printf("copying %s into position %d %d, copied string is %s\n", formatted_cmd[j], i, k, seperated_cmd[i][k]);
-            k++;
+        for(int j = 0 ; j < cmd_amount ; j++) {
+            if(x == positions[i] || x == cmd_amount) {
+                // final position in command needs to be NULL for execvp
+                seperated_cmd[i][j] = (char *) safe_alloc(sizeof(char));
+                seperated_cmd[i][j] = (char *) NULL;
+                j = cmd_amount; // break the loop
+            } else {
+                seperated_cmd[i][j] = (char *) safe_alloc(MAX_CMD_LEN * 
+                                                                sizeof(char));
+                strcpy(seperated_cmd[i][j], formatted_cmd[x]);
+            }
+            x++;
         }
     }
+
+    // fria formatted_cmd
 }
 
 // size bör vara en array, pipes är storleken, vi behöver också faktiska pipes
@@ -163,6 +176,7 @@ int execute_cmd(int size, int pipes, char **cmd) {
 
     return status;
 }
+
 
 // Prints working directory
 void print_wd(void) {
@@ -207,8 +221,34 @@ void exec_no_pipes(char **cmd) {
     if(pid == 0) {
         if (execvp(cmd[0], cmd) < 0) {
             perror(cmd[0]);
-            exit(1);
+            exit(EXIT_FAIL);
         }
+    }
+}
+
+void exec_w_pipes(char ***cmds, int pipes[][2], int pipe_amount) {
+    for(int i = 0 ; i <= pipe_amount ; i++) {
+        pid_t pid;
+        if ((pid = fork()) < 0) {
+            perror("fork failed");
+            exit(EXIT_FAIL);
+        }
+    
+        if(pid == 0) {
+            if(i == 0) {
+                close_pipes_first_child(pipes, pipe_amount);
+            } else if (i == pipe_amount) {
+                close_pipes_last_child(pipes, pipe_amount, i);
+            } else {
+                close_pipes_middle_child(pipes, pipe_amount, i);
+            }
+            if(execvp(cmds[i][0], cmds[i]) < 0) {
+                perror(cmds[i][0]);
+                //fria
+                exit(EXIT_FAILURE);
+            }
+        }
+
     }
 }
 
@@ -230,30 +270,55 @@ int parent_wait(int children) {
     return 1;
 }
 
-// built in command for printing most used commands in the history file
+void open_pipes(int pipes[][2], int pipe_amount) {
+    for (int i = 0; i < pipe_amount; i++) {
+        if (pipe(pipes[i]) != 0) {
+            perror("pipe failed");
+        }
+    }
+}
 
-/*  Pseudo code  */
-/*
-Command is entered and if length is non-null, keep it in history, else break and call init_shell().
+void close_pipes_first_child(int arr[][2], int pipe_amount) {
+    // The first child will set its output to the first pipes write end
+    if (dup2(arr[0][WRITE_END], STDOUT_FILENO) < 0) {
+        perror("dup failed first child");
+        exit(1);
+    }
 
-Parsing, break up commands and arguments into individual words and strings
+    close_pipes(arr, pipe_amount);
+}
 
-Checking for special characters like pipes, etc is done
+void close_pipes_last_child(int arr[][2], int pipe_amount, int index) {
+    // The last child will set its input from the previous pipes read end
+    if (dup2(arr[index - 1][READ_END], STDIN_FILENO) < 0) {
+        perror("dup failed");
+        exit(1);
+    }
 
-Checking if built-in commands are asked for.
-    - skapa ett par built in commands
+    close_pipes(arr, pipe_amount);
+}
 
-If pipes are present, handling pipes.
-    - kika mexec lösningen
+void close_pipes_middle_child(int arr[][2], int pipe_amount, int index) {
+    // the middle child will set its input from the previous pipes read end and its output to the
+    // next pipes write end.
+    if (dup2(arr[index - 1][READ_END], STDIN_FILENO) < 0) {
+        perror("dup failed");
+        exit(1);
+    }
+    if (dup2(arr[index][WRITE_END], STDOUT_FILENO) < 0) {
+        perror("dup failed");
+        exit(1);
+    }
 
-Executing system commands and libraries by forking a child and calling execvp.
+    close_pipes(arr, pipe_amount);
+}
 
-Printing current directory name and asking for next input
-*/
-
-// DEPENDENCIES
-/*
-sudo apt-get install libreadline-dev
-
-
-*/
+void close_pipes(int arr[][2], int upper_limit) {
+    // closes all pipes
+    if ((upper_limit >= 0)) {
+        for (int i = 0; i < upper_limit; i++) {
+            close(arr[i][READ_END]);
+            close(arr[i][WRITE_END]);
+        }
+    }
+}

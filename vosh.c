@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <stdbool.h>
+#include "vosh.h"
 
 #define clear_terminal() printf("\033[H\033[J")
 #define purple() printf("\033[1;35m")
@@ -15,34 +16,10 @@
 #define READ_END 0
 #define WRITE_END 1
 
-void vosh_loop(void);
-void read_cmd(char *buf);
-int parse_cmd(char *cmd, char **formatted_cmd);
-int execute_cmd(int size, int pipes,  char **cmd);
-void print_shell(void);
-void print_wd(void);
-int parent_wait(int children);
-void exec_no_pipes(char **cmd);
-void exec_w_pipes(char ***cmds, int pipes[][2], int pipe_amount);
-int count_pipes(int size, int positions[], char **formatted_cmd);
-void prepare_cmds(int pipes, int positions[], int cmd_amount, char **formatted_cmd, char ***seperated_cmd);
-void save_to_history(void);
-void *safe_alloc(int size_of_mem);
-void open_pipes(int pipes[][2], int pipe_amount);
-void close_child_pipes(int pipes[][2], int pipe_amount);
-void close_pipes_first_child(int arr[][2], int pipe_amount);
-void close_pipes_last_child(int arr[][2], int pipe_amount, int index);
-void close_pipes_middle_child(int arr[][2], int pipe_amount, int index);
-void close_pipes(int arr[][2], int upper_limit);
-bool is_built_in_cmd(char *cmd);
-void exec_built_in_cmd(char **cmd);
-
 int main(int argc, char **argv) {
     clear_terminal();
 
     vosh_loop();
-
-    // gör cleanup
 
     return EXIT_SUCCESS;
 }
@@ -57,6 +34,8 @@ void print_shell(void) {
 
 void vosh_loop(void) {
     int status = 1;
+
+    // loop is only broken if some error occur when executing commands
     while (status) {
         print_shell();
 
@@ -67,29 +46,39 @@ void vosh_loop(void) {
 
         // Parse input
         int amount_of_cmds = parse_cmd(cmd_buffer, formatted_cmd);
-        int positions_of_pipes[(int) ((amount_of_cmds * 0.5) +1)]; // The max amount of well-formed pipes is amount-of_cmds/2
-        int pipe_amount = count_pipes(amount_of_cmds, positions_of_pipes, formatted_cmd);
+        int positions_of_pipes[(int) ((amount_of_cmds * 0.5) +1)]; 
+        int pipe_amount = count_pipes(amount_of_cmds, positions_of_pipes, 
+                                                            formatted_cmd);
 
         // Execute
         if(pipe_amount == 0) {
-            exec_no_pipes(formatted_cmd);
+            exec_no_pipes(formatted_cmd, amount_of_cmds);
             status = parent_wait(1);
         } else {
-            char ***seperated_cmds = (char ***)safe_alloc(pipe_amount * sizeof(char **));
-            prepare_cmds(pipe_amount, positions_of_pipes, amount_of_cmds, formatted_cmd, seperated_cmds);
-
-            int pipes[pipe_amount][2];
-            open_pipes(pipes, pipe_amount);
-            
-            exec_w_pipes(seperated_cmds, pipes, pipe_amount);
-
-            close_pipes(pipes, pipe_amount);
-            
+            pipe_and_exec(formatted_cmd, positions_of_pipes, amount_of_cmds, 
+                                    pipe_amount);
             status = parent_wait(pipe_amount + 1);
         }    
-
-        // fria
     }
+}
+
+void pipe_and_exec(char **formatted_cmd, int pipe_positions[], int cmd_amount,
+                                        int pipe_amount) {
+    // Prepare commands for execution
+    char ***seperated_cmds = (char ***)safe_alloc((pipe_amount + 1) * 
+                                            sizeof(char **));
+    prepare_cmds(pipe_amount, pipe_positions, cmd_amount,
+                                        formatted_cmd, seperated_cmds);
+
+    // Open pipes 
+    int pipes[pipe_amount][2];
+    open_pipes(pipes, pipe_amount);
+    
+    // Fork and execute the processes, close pipes for parent process
+    exec_w_pipes(seperated_cmds, pipes, pipe_amount);
+    close_pipes(pipes, pipe_amount);
+
+    free_seperated_cmds(seperated_cmds, pipe_amount);
 }
 
 void read_cmd(char *buf){
@@ -106,9 +95,6 @@ void save_to_history(void) {
     // save a command (not passwords)
 }
 
-// TODO: måste kolla efter citationstecken? vilka fler speciella tecken måste kollas?
-// #, ", ', ><, $?, *, ;, " Tror typ inga av dessa, bara citationstecken
-
 int parse_cmd(char *cmd, char **formatted_cmd) {
     int amount_of_cmds = 0;
     for (int i = 0; i < MAX_CMD_LEN * 0.5; i++) {
@@ -119,7 +105,8 @@ int parse_cmd(char *cmd, char **formatted_cmd) {
         }
         else if (strlen(tempbuf) == 0){ i--; }
         else {
-            formatted_cmd[i] = (char *)safe_alloc((strlen(tempbuf) + 1) * sizeof(char)); // +1 for \0
+            formatted_cmd[i] = (char *)safe_alloc((strlen(tempbuf) + 1) 
+                                                * sizeof(char)); // +1 for \0
             strcpy(formatted_cmd[i], tempbuf);
         }
         amount_of_cmds = i + 1;
@@ -140,9 +127,9 @@ void prepare_cmds(int pipes, int positions[], int cmd_amount,
         for(int j = 0 ; j < cmd_amount ; j++) {
             if(x == positions[i] || x == cmd_amount) {
                 // final position in command needs to be NULL for execvp
-                seperated_cmd[i][j] = (char *) safe_alloc(sizeof(char));
                 seperated_cmd[i][j] = (char *) NULL;
-                j = cmd_amount; // break the loop
+                // Break the loop
+                j = cmd_amount; 
             } else {
                 seperated_cmd[i][j] = (char *) safe_alloc(MAX_CMD_LEN * 
                                                                 sizeof(char));
@@ -152,36 +139,8 @@ void prepare_cmds(int pipes, int positions[], int cmd_amount,
         }
     }
 
-    // fria formatted_cmd
+    free_formatted_cmds(formatted_cmd, cmd_amount);
 }
-
-// size bör vara en array, pipes är storleken, vi behöver också faktiska pipes
-int execute_cmd(int size, int pipes, char **cmd) {
-    /*
-        After parsing, check the list of built-in commands, and if present, execute it. If not,
-    After parsing, check the list of built-in commands, and if present, execute it. If not,
-        After parsing, check the list of built-in commands, and if present, execute it. If not,
-        execute it as a system command. To check for built-in commands, store the commands in
-    execute it as a system command. To check for built-in commands, store the commands in
-        execute it as a system command. To check for built-in commands, store the commands in
-        an array of character pointers, and compare all with strcmp().
-
-        “cd” does not work natively using execvp, so it is a built-in command, executed with
-    “cd” does not work natively using execvp, so it is a built-in command, executed with
-        “cd” does not work natively using execvp, so it is a built-in command, executed with
-        chdir().
-    */
-
-
-    // det här kan vi ha som special case i en egen funk
-    int status = 1;
-    for (int i = 0; i < pipes; i++) {
-       
-    }
-
-    return status;
-}
-
 
 // Prints working directory
 void print_wd(void) {
@@ -203,6 +162,29 @@ void *safe_alloc(int size_of_mem) {
     return v;
 }
 
+void free_formatted_cmds(char **cmds, int cmd_amount) {
+    for(int i = 0 ; i < cmd_amount ; i++) {
+         free(cmds[i]);
+    }
+    free(cmds);
+}
+
+void free_seperated_cmds(char ***cmds, int pipe_amount) {
+    int i = 0;
+    for(int j = 0 ; j <= pipe_amount ; j++) {
+        while(cmds[j][i] != NULL) {
+            printf("friar: %s\n", cmds[j][i]);
+            free(cmds[j][i]);
+            i++;
+        }
+        printf("friar: %s\n", cmds[j][i]);
+        free(cmds[j][i]);
+        free(cmds[j]);
+        i = 0;
+    }
+    free(cmds);
+}
+
 int count_pipes(int size, int positions[], char **formatted_cmd) {
     int pos = 0;
     int amount = 0;
@@ -216,7 +198,7 @@ int count_pipes(int size, int positions[], char **formatted_cmd) {
     return amount;
 }
 
-void exec_no_pipes(char **cmd) {
+void exec_no_pipes(char **cmd, int cmd_amount) {
     pid_t pid;
     if ((pid = fork()) < 0) {
         perror("fork failed");
@@ -224,10 +206,17 @@ void exec_no_pipes(char **cmd) {
     }
 
     if(pid == 0) {
-        if (execvp(cmd[0], cmd) < 0) {
-            perror(cmd[0]);
-            exit(EXIT_FAIL);
+        if(is_built_in_cmd(cmd[0])) {
+            exec_built_in_cmd(cmd);
+        } else {
+            if (execvp(cmd[0], cmd) < 0) {
+                perror(cmd[0]);
+                free_formatted_cmds(cmd, cmd_amount);
+                exit(EXIT_FAIL);
+            }
         }
+    } else {
+        free_formatted_cmds(cmd, cmd_amount);
     }
 }
 
@@ -240,20 +229,14 @@ void exec_w_pipes(char ***cmds, int pipes[][2], int pipe_amount) {
         }
     
         if(pid == 0) {
-            if(i == 0) {
-                close_pipes_first_child(pipes, pipe_amount);
-            } else if (i == pipe_amount) {
-                close_pipes_last_child(pipes, pipe_amount, i);
-            } else {
-                close_pipes_middle_child(pipes, pipe_amount, i);
-            }
+            children_pipe_handler(pipes, pipe_amount, i);
 
             if(is_built_in_cmd(cmds[i][0])) {
                 exec_built_in_cmd(cmds[i]);
             } else {
                 if(execvp(cmds[i][0], cmds[i]) < 0) {
                     perror(cmds[i][0]);
-                    //fria
+                    free_seperated_cmds(cmds, pipe_amount);
                     exit(EXIT_FAILURE);
                 }
             }
@@ -287,6 +270,16 @@ void open_pipes(int pipes[][2], int pipe_amount) {
     }
 }
 
+void children_pipe_handler(int pipes[][2], int pipe_amount, int child_number) {
+    if(child_number == 0) {
+        close_pipes_first_child(pipes, pipe_amount);
+    } else if (child_number == pipe_amount) {
+        close_pipes_last_child(pipes, pipe_amount, child_number);
+    } else {
+        close_pipes_middle_child(pipes, pipe_amount, child_number);
+    }
+}
+
 void close_pipes_first_child(int arr[][2], int pipe_amount) {
     // The first child will set its output to the first pipes write end
     if (dup2(arr[0][WRITE_END], STDOUT_FILENO) < 0) {
@@ -308,8 +301,8 @@ void close_pipes_last_child(int arr[][2], int pipe_amount, int index) {
 }
 
 void close_pipes_middle_child(int arr[][2], int pipe_amount, int index) {
-    // the middle child will set its input from the previous pipes read end and its output to the
-    // next pipes write end.
+    // the middle child will set its input from the previous pipes read end 
+    // and its output to the next pipes write end.
     if (dup2(arr[index - 1][READ_END], STDIN_FILENO) < 0) {
         perror("dup failed");
         exit(1);
@@ -338,5 +331,7 @@ bool is_built_in_cmd(char *cmd) {
 }
 
 void exec_built_in_cmd(char **cmd) {
-
+    // kör cd med chdir
+    // help måste finnas
+    // exit? borde finnas
 }

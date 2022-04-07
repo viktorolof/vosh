@@ -10,14 +10,19 @@
 #define clear_terminal() printf("\033[H\033[J")
 #define purple() printf("\033[1;35m")
 #define blue() printf("\033[1;34m")
+#define red() printf("\033[1;31m")
+#define green() printf("\033[1;32m")
+#define yellow() printf("\033[0;33m")
+#define cyan() printf("\033[1;36m")
+#define white() printf("\033[1;37m")
 #define reset_color() printf("\033[0m")
 #define EXIT_FAIL 1
 #define MAX_CMD_LEN 512
 #define READ_END 0
 #define WRITE_END 1
-#define VOSH_CMD_SIZE 3
+#define VOSH_CMD_SIZE 4
 
-char *vosh_cmds[VOSH_CMD_SIZE] = {"cd", "baggen", "help"};
+char *vosh_cmds[VOSH_CMD_SIZE] = {"cd", "baggen", "help", "mmind"};
 
 int main(int argc, char **argv) {
     clear_terminal();
@@ -346,6 +351,94 @@ int is_built_in_cmd(char *cmd) {
     return -1;
 }
 
+void print_mastermind(void) {
+    printf("*********** MASTER MIND **********\n");
+    printf("The computer has chosen 4 unknown\n");
+    printf(" * symbols in different colors.  \n");
+    printf("There are seven different colors:\n");
+    red();
+    printf(" R");
+    green();
+    printf(" G");
+    yellow();
+    printf(" Y");
+    blue();
+    printf(" B");
+    purple();
+    printf(" P");
+    cyan();
+    printf(" C");
+    white();
+    printf(" W\n\n");
+    printf("You have seven rounds to guess what\n");
+    printf("colors were chosen. Each round you\n");
+    printf("will pick 4 colors and their positions.\n");
+    printf("Format your guesses without any spaces \nlike this:\n");
+    printf("RYBC (Red, Yellow, Blue, Cyan)\n\n");
+    printf("If you guessed a correct color in the \ncorrect position that input will turn green.\n");
+    printf("If you guessed a correct color in the\nincorrect posiotion that input will turn yellow.\n\n");
+}
+
+void randomize_colors(char *answer) {
+    strcpy(answer, "RGBC");
+}
+
+void compare_strings(char *computer, char *player) {
+    int green_indexes[] = {-1, -1, -1, -1};
+    int yellow_indexes[] = {-1, -1, -1, -1};
+
+    for(int i = 0 ; i < 4 ; i++) {
+        if(player[i] == computer[i]) {
+            // if correct color is at correct position save the position
+            green_indexes[i] = i;
+            // maybe unnecessary
+            if(yellow_indexes[i] == i) {
+                yellow_indexes[i] = -1;
+            }
+        } else {
+            for(int j = 0 ; j < 4 ; j++) {
+                // check if it is a correct color but wrong position
+                if(player[i] == computer[j] && green_indexes[j] == -1) {
+                   yellow_indexes[i] = i;
+                }
+            }
+        }
+    }
+
+    int res = 0;
+    for(int i = 0 ; i < 4 ; i++) {
+        if(green_indexes[i] != -1) {
+            green();
+            res++;
+        } else if(yellow_indexes[i] != -1) {
+            yellow();
+        } else {
+            white();
+        }
+        printf("%c", player[i]);
+    }
+    printf("\n");
+    reset_color();
+
+    // return res
+}
+
+void play_mastermind(void) {
+    print_mastermind();
+    char *answer = safe_alloc(4 * sizeof(char));
+    randomize_colors(answer);
+    for(int i = 0 ; i < 7 ; i++) {
+        printf("Round %d\n", i + 1);
+        char buf[5];
+        fgets(buf, 5, stdin);
+        compare_strings(answer, buf);
+    }
+
+    free(answer);
+}
+
+
+
 void exec_built_in_cmd(int index, char** cmd) {
     // kör cd med chdir
     // help måste finnas
@@ -368,6 +461,9 @@ void exec_built_in_cmd(int index, char** cmd) {
         case 2: {
             print_help();
             break;
+        }
+        case 3: {
+            play_mastermind();
         }
     }
     

@@ -114,5 +114,17 @@ void exec_built_in_cmd(int index, char** cmd);
  */
 void print_help(void);
 
+/*
+ * Prints the rules of the mastermind game.
+ */
+void print_mastermind(void);
+
+void play_mastermind(void);
+
+void randomize_colors(char *answer);
+
+void compare_strings(char *computer, char *player);
+
+
 
 #endif

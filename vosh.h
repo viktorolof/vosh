@@ -114,12 +114,14 @@ void close_pipes(int arr[][2], int upper_limit);
 /*
  *
  */
-bool is_built_in_cmd(char *cmd);
+int is_built_in_cmd(char *cmd);
 
 /*
  *
  */
-void exec_built_in_cmd(char **cmd);
+void exec_built_in_cmd(int index, char** cmd);
+
+void print_help(void);
 
 
 #endif

@@ -15,6 +15,9 @@
 #define MAX_CMD_LEN 512
 #define READ_END 0
 #define WRITE_END 1
+#define VOSH_CMD_SIZE 3
+
+char *vosh_cmds[VOSH_CMD_SIZE] = {"cd", "baggen", "help"};
 
 int main(int argc, char **argv) {
     clear_terminal();
@@ -52,8 +55,14 @@ void vosh_loop(void) {
 
         // Execute
         if(pipe_amount == 0) {
-            exec_no_pipes(formatted_cmd, amount_of_cmds);
-            status = parent_wait(1);
+            int x;
+            if((x =is_built_in_cmd(formatted_cmd[0])) != -1) {
+                exec_built_in_cmd(x, formatted_cmd);
+                free_formatted_cmds(formatted_cmd, amount_of_cmds);
+            } else {
+                exec_no_pipes(formatted_cmd, amount_of_cmds);
+                status = parent_wait(1);
+            }
         } else {
             pipe_and_exec(formatted_cmd, positions_of_pipes, amount_of_cmds, 
                                     pipe_amount);
@@ -150,9 +159,6 @@ void print_wd(void) {
     fflush(stdout);
 }
 
-// built in command for printing useful commands when hacking
-void print_hack_cmds(char *arg) {}
-
 void *safe_alloc(int size_of_mem) {
     void *v;
     if ((v = malloc(size_of_mem)) == NULL) {
@@ -173,11 +179,9 @@ void free_seperated_cmds(char ***cmds, int pipe_amount) {
     int i = 0;
     for(int j = 0 ; j <= pipe_amount ; j++) {
         while(cmds[j][i] != NULL) {
-            printf("friar: %s\n", cmds[j][i]);
             free(cmds[j][i]);
             i++;
         }
-        printf("friar: %s\n", cmds[j][i]);
         free(cmds[j][i]);
         free(cmds[j]);
         i = 0;
@@ -205,17 +209,15 @@ void exec_no_pipes(char **cmd, int cmd_amount) {
         exit(1);
     }
 
-    if(pid == 0) {
-        if(is_built_in_cmd(cmd[0])) {
-            exec_built_in_cmd(cmd);
-        } else {
-            if (execvp(cmd[0], cmd) < 0) {
-                perror(cmd[0]);
-                free_formatted_cmds(cmd, cmd_amount);
-                exit(EXIT_FAIL);
-            }
-        }
+    if(pid == 0) {   
+        // child case
+        if (execvp(cmd[0], cmd) < 0) {
+            perror(cmd[0]);
+            free_formatted_cmds(cmd, cmd_amount);
+            exit(EXIT_FAIL);
+        }     
     } else {
+        // parent case
         free_formatted_cmds(cmd, cmd_amount);
     }
 }
@@ -229,16 +231,13 @@ void exec_w_pipes(char ***cmds, int pipes[][2], int pipe_amount) {
         }
     
         if(pid == 0) {
+            // child case
             children_pipe_handler(pipes, pipe_amount, i);
 
-            if(is_built_in_cmd(cmds[i][0])) {
-                exec_built_in_cmd(cmds[i]);
-            } else {
-                if(execvp(cmds[i][0], cmds[i]) < 0) {
-                    perror(cmds[i][0]);
-                    free_seperated_cmds(cmds, pipe_amount);
-                    exit(EXIT_FAILURE);
-                }
+            if(execvp(cmds[i][0], cmds[i]) < 0) {
+                perror(cmds[i][0]);
+                free_seperated_cmds(cmds, pipe_amount);
+                exit(EXIT_FAILURE);
             }
         }
     }
@@ -325,13 +324,51 @@ void close_pipes(int arr[][2], int upper_limit) {
     }
 }
 
-
-bool is_built_in_cmd(char *cmd) {
-    return false;
+void print_help(void) {
+    purple();
+    printf("******** VOSHELL HELP ********\n");
+    reset_color();
+    printf("List of built in commands:"
+        "\n>help - displays help"
+        "\n>baggen - baggen rolls in"
+        "\n--------------------------"
+        "\nRegular commands for linux-terminals are supported"
+        "\nShell can also handle multiple pipes\n\n");
 }
 
-void exec_built_in_cmd(char **cmd) {
+
+int is_built_in_cmd(char *cmd) {
+    for(int i = 0 ; i < VOSH_CMD_SIZE ; i++) {
+        if(strcmp(vosh_cmds[i], cmd) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void exec_built_in_cmd(int index, char** cmd) {
     // kör cd med chdir
     // help måste finnas
     // exit? borde finnas
+
+    switch(index) {
+        case 0 :{
+            chdir(cmd[1]);
+            break;
+        }
+        case 1: {
+            char **arr = safe_alloc(3 * sizeof(char *));
+            arr[0] = "cat";
+            arr[1] = "baggen";
+            arr[2] = NULL;
+            exec_no_pipes(arr, 0);
+            parent_wait(1);
+            break;
+        }
+        case 2: {
+            print_help();
+            break;
+        }
+    }
+    
 }

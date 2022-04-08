@@ -123,7 +123,11 @@ void play_mastermind(void);
 
 void randomize_colors(char *answer);
 
-void compare_strings(char *computer, char *player);
+int compare_strings(char *computer, char *player);
+
+void print_win(void);
+
+void print_loss(void);
 
 
 

@@ -370,28 +370,42 @@ void print_mastermind(void) {
     printf(" C");
     white();
     printf(" W\n\n");
-    printf("You have seven rounds to guess what\n");
+    printf("You have 5 rounds to guess what\n");
     printf("colors were chosen. Each round you\n");
     printf("will pick 4 colors and their positions.\n");
     printf("Format your guesses without any spaces \nlike this:\n");
     printf("RYBC (Red, Yellow, Blue, Cyan)\n\n");
-    printf("If you guessed a correct color in the \ncorrect position that input will turn green.\n");
-    printf("If you guessed a correct color in the\nincorrect posiotion that input will turn yellow.\n\n");
+    printf("Correct color correct position = ");
+    green();
+    printf("green\n");
+    reset_color();
+    printf("Correct color correct position = ");
+    yellow();
+    printf("yellow\n");
+    reset_color();
+    printf("Incorrect color incorrect position = white\n\n");
 }
 
 void randomize_colors(char *answer) {
     strcpy(answer, "RGBC");
 }
 
-void compare_strings(char *computer, char *player) {
+int compare_strings(char *computer, char *player) {
     int green_indexes[] = {-1, -1, -1, -1};
     int yellow_indexes[] = {-1, -1, -1, -1};
-
+    
     for(int i = 0 ; i < 4 ; i++) {
         if(player[i] == computer[i]) {
             // if correct color is at correct position save the position
             green_indexes[i] = i;
-            // maybe unnecessary
+            
+            // if there was a character of the same sort found already ~ if(yellow.contains)
+            for(int k = 0 ; k < 4 ; k++) {
+                if(yellow_indexes[k] == i) {
+                    yellow_indexes[k] = -1;
+                }
+            }
+
             if(yellow_indexes[i] == i) {
                 yellow_indexes[i] = -1;
             }
@@ -399,7 +413,17 @@ void compare_strings(char *computer, char *player) {
             for(int j = 0 ; j < 4 ; j++) {
                 // check if it is a correct color but wrong position
                 if(player[i] == computer[j] && green_indexes[j] == -1) {
-                   yellow_indexes[i] = i;
+                    // if the computer character is already used ~ if(yellow.contains)
+                    bool not_used = true;
+                    for(int k = 0 ; k < 4 ; k++) {
+                        if(yellow_indexes[k] == j) {
+                            not_used = false;
+                        }
+                    }
+
+                    if(not_used) {
+                        yellow_indexes[i] = j;
+                    }
                 }
             }
         }
@@ -420,21 +444,43 @@ void compare_strings(char *computer, char *player) {
     printf("\n");
     reset_color();
 
-    // return res
+    return res;
 }
 
 void play_mastermind(void) {
     print_mastermind();
     char *answer = safe_alloc(4 * sizeof(char));
     randomize_colors(answer);
-    for(int i = 0 ; i < 7 ; i++) {
+
+    bool won = false;
+    for(int i = 0 ; i < 5 ; i++) {
         printf("Round %d\n", i + 1);
-        char buf[5];
-        fgets(buf, 5, stdin);
-        compare_strings(answer, buf);
+        char buf[10];
+        fgets(buf, 10, stdin);
+        if(compare_strings(answer, buf) == 4) {
+            won = true;
+            break;
+        }
     }
 
+    (won) ? (print_win()) : (print_loss());
+
     free(answer);
+}
+
+void print_win(void) {
+    green();
+    printf("Congrats, you won.\n");
+    reset_color();
+    printf("**********************************\n");
+
+}
+
+void print_loss(void) {
+    red();
+    printf("Smh my head... you lost..\n");
+    reset_color();
+    printf("**********************************\n");
 }
 
 

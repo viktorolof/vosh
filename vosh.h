@@ -125,9 +125,11 @@ void randomize_colors(char *answer);
 
 int compare_strings(char *computer, char *player);
 
-void print_win(void);
+void print_win(char *res);
 
-void print_loss(void);
+void print_loss(char *res);
+
+void print_computer_answer(char *answer);
 
 
 

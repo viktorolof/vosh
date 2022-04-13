@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <stdbool.h>
+#include <time.h>
 #include "vosh.h"
 
 #define clear_terminal() printf("\033[H\033[J")
@@ -370,24 +371,55 @@ void print_mastermind(void) {
     printf(" C");
     white();
     printf(" W\n\n");
-    printf("You have 5 rounds to guess what\n");
+    printf("You have 10 rounds to guess what\n");
     printf("colors were chosen. Each round you\n");
     printf("will pick 4 colors and their positions.\n");
     printf("Format your guesses without any spaces \nlike this:\n");
     printf("RYBC (Red, Yellow, Blue, Cyan)\n\n");
-    printf("Correct color correct position = ");
-    green();
-    printf("green\n");
-    reset_color();
-    printf("Correct color correct position = ");
-    yellow();
-    printf("yellow\n");
-    reset_color();
-    printf("Incorrect color incorrect position = white\n\n");
+    printf("Each round you will know how many\n");
+    printf("guesses were correct and in the\n");
+    printf("correct position.\n\n");
 }
 
 void randomize_colors(char *answer) {
-    strcpy(answer, "RGBC");
+    char buf[5];
+    for(int i = 0 ; i < 4 ; i++) {
+        // randomisera från 0 - 6
+        int x = rand() % 7;
+
+        switch(x) {
+            case 0: {
+                buf[i] = 'R';
+                break;
+            }
+            case 1: {
+                buf[i] = 'G';
+                break;
+            }
+            case 2: {
+                buf[i] = 'Y';
+                break;
+            }
+            case 3: {
+                buf[i] = 'B';
+                break;                
+            }
+            case 4: {
+                buf[i] = 'P';
+                break;
+            }
+            case 5: {
+                buf[i] = 'C';
+                break;
+            }
+             case 6: {
+                buf[i] = 'W';
+                break;
+            }
+        }
+    }
+    buf[4] = '\0';
+    strcpy(answer, buf);
 }
 
 int compare_strings(char *computer, char *player) {
@@ -429,22 +461,32 @@ int compare_strings(char *computer, char *player) {
         }
     }
 
-    int res = 0;
+    int g_res = 0;
+    int y_res = 0;
     for(int i = 0 ; i < 4 ; i++) {
         if(green_indexes[i] != -1) {
-            green();
-            res++;
+            g_res++;
         } else if(yellow_indexes[i] != -1) {
-            yellow();
-        } else {
-            white();
-        }
-        printf("%c", player[i]);
+            y_res++;
+        } 
     }
-    printf("\n");
+
+    if(g_res > 0) {
+        green();
+        printf("%d correct and correct position\n", g_res);
+    }
+    if(y_res > 0) {
+        yellow();
+        printf("%d correct but wrong position\n", y_res);
+
+    }
+    if(g_res == 0 && y_res == 0) {
+        white();
+        printf("0 correct guesses\n");
+    }
     reset_color();
 
-    return res;
+    return g_res;
 }
 
 void play_mastermind(void) {
@@ -453,7 +495,7 @@ void play_mastermind(void) {
     randomize_colors(answer);
 
     bool won = false;
-    for(int i = 0 ; i < 5 ; i++) {
+    for(int i = 0 ; i < 10 ; i++) {
         printf("Round %d\n", i + 1);
         char buf[10];
         fgets(buf, 10, stdin);
@@ -463,24 +505,65 @@ void play_mastermind(void) {
         }
     }
 
-    (won) ? (print_win()) : (print_loss());
+    (won) ? (print_win(answer)) : (print_loss(answer));
 
     free(answer);
 }
 
-void print_win(void) {
+void print_win(char *res) {
     green();
     printf("Congrats, you won.\n");
+    print_computer_answer(res);
     reset_color();
     printf("**********************************\n");
 
 }
 
-void print_loss(void) {
+void print_loss(char *res) {
     red();
     printf("Smh my head... you lost..\n");
+    printf("The answer was: ");
+    print_computer_answer(res);
     reset_color();
     printf("**********************************\n");
+}
+
+void print_computer_answer(char *answer) {
+    for(int i = 0 ; i < 4 ; i++) {
+        char c = answer[i];
+        switch(c) {
+            case 'R': {
+                red();
+                break;
+            }
+            case 'G': {
+                green();
+                break;
+            }
+            case 'B': {
+                blue();
+                break;
+            }
+            case 'C': {
+                cyan();
+                break;
+            }
+            case 'Y': {
+                yellow();
+                break;
+            }
+            case 'P': {
+                purple();
+                break;
+            }
+            case 'W': {
+                white();
+                break;
+            }
+        }
+        printf("%c", c);
+    }
+    printf("\n");
 }
 
 

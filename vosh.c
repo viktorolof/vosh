@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include <time.h>
 #include "vosh.h"
+#include "mastermind.h"
 
 #define clear_terminal() printf("\033[H\033[J")
 #define purple() printf("\033[1;35m")
@@ -25,7 +26,7 @@
 
 char *vosh_cmds[VOSH_CMD_SIZE] = {"cd", "baggen", "help", "mmind"};
 
-int main(int argc, char **argv) {
+int main(void) {
     clear_terminal();
 
     vosh_loop();
@@ -44,7 +45,6 @@ void print_shell(void) {
 void vosh_loop(void) {
     int status = 1;
 
-    // loop is only broken if some error occur when executing commands
     while (status) {
         print_shell();
 
@@ -56,34 +56,29 @@ void vosh_loop(void) {
         // Parse input
         int amount_of_cmds = parse_cmd(cmd_buffer, formatted_cmd);
         int positions_of_pipes[(int) ((amount_of_cmds * 0.5) +1)]; 
-        int pipe_amount = count_pipes(amount_of_cmds, positions_of_pipes, 
-                                                            formatted_cmd);
+        int pipe_amount = count_pipes(amount_of_cmds, positions_of_pipes, formatted_cmd);
 
         // Execute
         if(pipe_amount == 0) {
-            int x;
-            if((x =is_built_in_cmd(formatted_cmd[0])) != -1) {
-                exec_built_in_cmd(x, formatted_cmd);
+            int command;
+            if((command = is_built_in_cmd(formatted_cmd[0])) != -1) {
+                exec_built_in_cmd(command, formatted_cmd);
                 free_formatted_cmds(formatted_cmd, amount_of_cmds);
             } else {
                 exec_no_pipes(formatted_cmd, amount_of_cmds);
                 status = parent_wait(1);
             }
         } else {
-            pipe_and_exec(formatted_cmd, positions_of_pipes, amount_of_cmds, 
-                                    pipe_amount);
+            pipe_and_exec(formatted_cmd, positions_of_pipes, amount_of_cmds, pipe_amount);
             status = parent_wait(pipe_amount + 1);
         }    
     }
 }
 
-void pipe_and_exec(char **formatted_cmd, int pipe_positions[], int cmd_amount,
-                                        int pipe_amount) {
+void pipe_and_exec(char **formatted_cmd, int pipe_positions[], int cmd_amount, int pipe_amount) {
     // Prepare commands for execution
-    char ***seperated_cmds = (char ***)safe_alloc((pipe_amount + 1) * 
-                                            sizeof(char **));
-    prepare_cmds(pipe_amount, pipe_positions, cmd_amount,
-                                        formatted_cmd, seperated_cmds);
+    char ***seperated_cmds = (char ***)safe_alloc((pipe_amount + 1) * sizeof(char **));
+    prepare_cmds(pipe_amount, pipe_positions, cmd_amount, formatted_cmd, seperated_cmds);
 
     // Open pipes 
     int pipes[pipe_amount][2];
@@ -103,7 +98,7 @@ void read_cmd(char *buf){
 
 void remove_newline(char *arr) {
     arr[strcspn(arr, "\n")] = 0;
-    arr[strcspn(arr, "\r")] = 0; // unnecessary? probably but test it
+    arr[strcspn(arr, "\r")] = 0;
 }
 
 void save_to_history(void) {
@@ -115,13 +110,12 @@ int parse_cmd(char *cmd, char **formatted_cmd) {
     for (int i = 0; i < MAX_CMD_LEN * 0.5; i++) {
         char *tempbuf = strsep(&cmd, " ");
         if (tempbuf == NULL) {
-            remove_newline(formatted_cmd[i - 1]); // Remove newline from last command or flag
+            remove_newline(formatted_cmd[i - 1]);
             break;
         }
         else if (strlen(tempbuf) == 0){ i--; }
         else {
-            formatted_cmd[i] = (char *)safe_alloc((strlen(tempbuf) + 1) 
-                                                * sizeof(char)); // +1 for \0
+            formatted_cmd[i] = (char *)safe_alloc((strlen(tempbuf) + 1) * sizeof(char)); 
             strcpy(formatted_cmd[i], tempbuf);
         }
         amount_of_cmds = i + 1;
@@ -131,33 +125,29 @@ int parse_cmd(char *cmd, char **formatted_cmd) {
 }
 
 
-void prepare_cmds(int pipes, int positions[], int cmd_amount, 
-                    char **formatted_cmd, char ***seperated_cmd) {
-    int x = 0; // counter for formatted_cmd
+void prepare_cmds(int pipes, int positions[], int cmd_amount, char **formatted_cmd, char ***seperated_cmd) {
+    int counter = 0;
     positions[pipes] = -1; // define last position in array to avoid undefined behaviour
 
     // Loop for breaking up formatted_cmd into seperated, executable commands
     for(int i = 0 ; i <= pipes ; i++) {
         seperated_cmd[i] = (char **) safe_alloc(cmd_amount * sizeof(char *));
         for(int j = 0 ; j < cmd_amount ; j++) {
-            if(x == positions[i] || x == cmd_amount) {
+            if(counter == positions[i] || counter == cmd_amount) {
                 // final position in command needs to be NULL for execvp
                 seperated_cmd[i][j] = (char *) NULL;
-                // Break the loop
                 j = cmd_amount; 
             } else {
-                seperated_cmd[i][j] = (char *) safe_alloc(MAX_CMD_LEN * 
-                                                                sizeof(char));
-                strcpy(seperated_cmd[i][j], formatted_cmd[x]);
+                seperated_cmd[i][j] = (char *) safe_alloc(MAX_CMD_LEN * sizeof(char));
+                strcpy(seperated_cmd[i][j], formatted_cmd[counter]);
             }
-            x++;
+            counter++;
         }
     }
 
     free_formatted_cmds(formatted_cmd, cmd_amount);
 }
 
-// Prints working directory
 void print_wd(void) {
     char current_directory[MAX_CMD_LEN];
     getcwd(current_directory, MAX_CMD_LEN * sizeof(char));
@@ -176,7 +166,7 @@ void *safe_alloc(int size_of_mem) {
 
 void free_formatted_cmds(char **cmds, int cmd_amount) {
     for(int i = 0 ; i < cmd_amount ; i++) {
-         free(cmds[i]);
+        free(cmds[i]);
     }
     free(cmds);
 }
@@ -239,7 +229,6 @@ void exec_w_pipes(char ***cmds, int pipes[][2], int pipe_amount) {
         if(pid == 0) {
             // child case
             children_pipe_handler(pipes, pipe_amount, i);
-
             if(execvp(cmds[i][0], cmds[i]) < 0) {
                 perror(cmds[i][0]);
                 free_seperated_cmds(cmds, pipe_amount);
@@ -306,8 +295,7 @@ void close_pipes_last_child(int arr[][2], int pipe_amount, int index) {
 }
 
 void close_pipes_middle_child(int arr[][2], int pipe_amount, int index) {
-    // the middle child will set its input from the previous pipes read end 
-    // and its output to the next pipes write end.
+    // the middle child will set its input from the previous pipes read end and its output to the next pipes write end.
     if (dup2(arr[index - 1][READ_END], STDIN_FILENO) < 0) {
         perror("dup failed");
         exit(1);
@@ -330,19 +318,9 @@ void close_pipes(int arr[][2], int upper_limit) {
     }
 }
 
-void print_help(void) {
-    purple();
-    printf("******** VOSHELL HELP ********\n");
-    reset_color();
-    printf("List of built in commands:"
-        "\n>help - displays help"
-        "\n>baggen - baggen rolls in"
-        "\n--------------------------"
-        "\nRegular commands for linux-terminals are supported"
-        "\nShell can also handle multiple pipes\n\n");
-}
 
 
+/***** FUNCTIONS FOR BUILT IN COMMANDS *******/
 int is_built_in_cmd(char *cmd) {
     for(int i = 0 ; i < VOSH_CMD_SIZE ; i++) {
         if(strcmp(vosh_cmds[i], cmd) == 0) {
@@ -352,227 +330,21 @@ int is_built_in_cmd(char *cmd) {
     return -1;
 }
 
-void print_mastermind(void) {
-    printf("*********** MASTER MIND **********\n");
-    printf("The computer has chosen 4 unknown\n");
-    printf(" * symbols in different colors.  \n");
-    printf("There are seven different colors:\n");
-    red();
-    printf(" R");
-    green();
-    printf(" G");
-    yellow();
-    printf(" Y");
-    blue();
-    printf(" B");
+void print_help(void) {
     purple();
-    printf(" P");
-    cyan();
-    printf(" C");
-    white();
-    printf(" W\n\n");
-    printf("You have 10 rounds to guess what\n");
-    printf("colors were chosen. Each round you\n");
-    printf("will pick 4 colors and their positions.\n");
-    printf("Format your guesses without any spaces \nlike this:\n");
-    printf("RYBC (Red, Yellow, Blue, Cyan)\n\n");
-    printf("Each round you will know how many\n");
-    printf("guesses were correct and in the\n");
-    printf("correct position.\n\n");
-}
-
-void randomize_colors(char *answer) {
-    char buf[5];
-    for(int i = 0 ; i < 4 ; i++) {
-        // randomisera från 0 - 6
-        int x = rand() % 7;
-
-        switch(x) {
-            case 0: {
-                buf[i] = 'R';
-                break;
-            }
-            case 1: {
-                buf[i] = 'G';
-                break;
-            }
-            case 2: {
-                buf[i] = 'Y';
-                break;
-            }
-            case 3: {
-                buf[i] = 'B';
-                break;                
-            }
-            case 4: {
-                buf[i] = 'P';
-                break;
-            }
-            case 5: {
-                buf[i] = 'C';
-                break;
-            }
-             case 6: {
-                buf[i] = 'W';
-                break;
-            }
-        }
-    }
-    buf[4] = '\0';
-    strcpy(answer, buf);
-}
-
-int compare_strings(char *computer, char *player) {
-    int green_indexes[] = {-1, -1, -1, -1};
-    int yellow_indexes[] = {-1, -1, -1, -1};
-    
-    for(int i = 0 ; i < 4 ; i++) {
-        if(player[i] == computer[i]) {
-            // if correct color is at correct position save the position
-            green_indexes[i] = i;
-            
-            // if there was a character of the same sort found already ~ if(yellow.contains)
-            for(int k = 0 ; k < 4 ; k++) {
-                if(yellow_indexes[k] == i) {
-                    yellow_indexes[k] = -1;
-                }
-            }
-
-            if(yellow_indexes[i] == i) {
-                yellow_indexes[i] = -1;
-            }
-        } else {
-            for(int j = 0 ; j < 4 ; j++) {
-                // check if it is a correct color but wrong position
-                if(player[i] == computer[j] && green_indexes[j] == -1) {
-                    // if the computer character is already used ~ if(yellow.contains)
-                    bool not_used = true;
-                    for(int k = 0 ; k < 4 ; k++) {
-                        if(yellow_indexes[k] == j) {
-                            not_used = false;
-                        }
-                    }
-
-                    if(not_used) {
-                        yellow_indexes[i] = j;
-                    }
-                }
-            }
-        }
-    }
-
-    int g_res = 0;
-    int y_res = 0;
-    for(int i = 0 ; i < 4 ; i++) {
-        if(green_indexes[i] != -1) {
-            g_res++;
-        } else if(yellow_indexes[i] != -1) {
-            y_res++;
-        } 
-    }
-
-    if(g_res > 0) {
-        green();
-        printf("%d correct and correct position\n", g_res);
-    }
-    if(y_res > 0) {
-        yellow();
-        printf("%d correct but wrong position\n", y_res);
-
-    }
-    if(g_res == 0 && y_res == 0) {
-        white();
-        printf("0 correct guesses\n");
-    }
+    printf("******** VOSHELL HELP ********\n");
     reset_color();
-
-    return g_res;
+    printf("List of built in commands:"
+        "\n> help - displays help"
+        "\n> baggen - baggen rolls in"
+        "\n> mmind - play a game of mastermind"
+        "\n--------------------------"
+        "\nRegular commands for linux-terminals are supported"
+        "\nShell can also handle multiple pipes\n\n");
 }
-
-void play_mastermind(void) {
-    print_mastermind();
-    char *answer = safe_alloc(4 * sizeof(char));
-    randomize_colors(answer);
-
-    bool won = false;
-    for(int i = 0 ; i < 10 ; i++) {
-        printf("Round %d\n", i + 1);
-        char buf[10];
-        fgets(buf, 10, stdin);
-        if(compare_strings(answer, buf) == 4) {
-            won = true;
-            break;
-        }
-    }
-
-    (won) ? (print_win(answer)) : (print_loss(answer));
-
-    free(answer);
-}
-
-void print_win(char *res) {
-    green();
-    printf("Congrats, you won.\n");
-    print_computer_answer(res);
-    reset_color();
-    printf("**********************************\n");
-
-}
-
-void print_loss(char *res) {
-    red();
-    printf("Smh my head... you lost..\n");
-    printf("The answer was: ");
-    print_computer_answer(res);
-    reset_color();
-    printf("**********************************\n");
-}
-
-void print_computer_answer(char *answer) {
-    for(int i = 0 ; i < 4 ; i++) {
-        char c = answer[i];
-        switch(c) {
-            case 'R': {
-                red();
-                break;
-            }
-            case 'G': {
-                green();
-                break;
-            }
-            case 'B': {
-                blue();
-                break;
-            }
-            case 'C': {
-                cyan();
-                break;
-            }
-            case 'Y': {
-                yellow();
-                break;
-            }
-            case 'P': {
-                purple();
-                break;
-            }
-            case 'W': {
-                white();
-                break;
-            }
-        }
-        printf("%c", c);
-    }
-    printf("\n");
-}
-
 
 
 void exec_built_in_cmd(int index, char** cmd) {
-    // kör cd med chdir
-    // help måste finnas
-    // exit? borde finnas
-
     switch(index) {
         case 0 :{
             chdir(cmd[1]);

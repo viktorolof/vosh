@@ -4,7 +4,7 @@ A simple Linux shell written in C.
 ## Usage
 Compile the shell with:
 ```bash
-gcc -Wall -Werror -o voshell vosh.c vosh.h
+make
 ```
 Run the shell with:
 ```bash

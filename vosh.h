@@ -1,8 +1,6 @@
 #ifndef VOSH_H
 #define VOSH_H
 
-#include <stdbool.h>
-
 /*
  * The eternal shell loop.
  */
@@ -46,8 +44,7 @@ void exec_w_pipes(char ***cmds, int pipes[][2], int pipe_amount);
 /*
  * Handles the execution of piped commands.
  */
-void pipe_and_exec(char **formatted_cmd, int pipe_positions[], int cmd_amount,
-                                        int pipe_amount);
+void pipe_and_exec(char **formatted_cmd, int pipe_positions[], int cmd_amount, int pipe_amount);
 
 /*
  * Depending on the process, pipes are duped and closed accordingly.
@@ -63,8 +60,7 @@ int count_pipes(int size, int positions[], char **formatted_cmd);
  * Prepares commands for execution with pipes. Seperates the previously formatted
  * commands where the pipes where found.
  */
-void prepare_cmds(int pipes, int positions[], int cmd_amount,
-                     char **formatted_cmd, char ***seperated_cmd);
+void prepare_cmds(int pipes, int positions[], int cmd_amount, char **formatted_cmd, char ***seperated_cmd);
 
 /*
  * Not implemented yet...
@@ -119,17 +115,40 @@ void print_help(void);
  */
 void print_mastermind(void);
 
+/*
+ * Starts a game of mastermind.
+ */
 void play_mastermind(void);
 
+/*
+ * Randomizes the computers colors in mastermind.
+ */
 void randomize_colors(char *answer);
 
+/*
+ * Compares the player string to the computer string. Displays how many the player guessed correctly.
+ */
 int compare_strings(char *computer, char *player);
 
+/*
+ * Prints that the player won.
+ */
 void print_win(char *res);
 
+/*
+ * Prints that the player lost.
+ */
 void print_loss(char *res);
 
+/*
+ * Prints the computer answer.
+ */
 void print_computer_answer(char *answer);
+
+/*
+ * Removes a newline from the end of a char array.
+ */
+void remove_newline(char *arr);
 
 
 
